@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.streamlit/secrets.toml
+*.pdf
+*.docx
+.DS_Store
+.idea/
+.vscode/
+
+# Keep your local master resume private
+master_resume.md
