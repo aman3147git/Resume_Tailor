@@ -83,6 +83,7 @@ def init_state() -> None:
     st.session_state.setdefault("template_style", None)
     st.session_state.setdefault("template_pdf_name", None)
     st.session_state.setdefault("removed_implicit", [])
+    st.session_state.setdefault("restored_project_links", [])
 
 
 def render_sidebar() -> dict:
@@ -272,6 +273,7 @@ def render_outputs() -> None:
         if st.session_state.tailored_resume:
             _check_gaps_present()
             _show_filtered_implicit_skills()
+            _show_restored_project_links()
             st.markdown(st.session_state.tailored_resume)
             st.divider()
             _render_downloads()
@@ -378,6 +380,19 @@ def _show_filtered_implicit_skills() -> None:
             "would look naive to a recruiter."
         )
         st.markdown(", ".join(f"`{s}`" for s in removed))
+
+
+def _show_restored_project_links() -> None:
+    """If the model dropped a project (or its link/timeline), tell the user
+    that the post-processor spliced it back in from the master."""
+    restored = st.session_state.get("restored_project_links") or []
+    if not restored:
+        return
+    st.info(
+        "Restored project content the model dropped or reformatted: "
+        + ", ".join(f"**{name}**" for name in restored)
+        + ". Source: master resume."
+    )
 
 
 _SECTION_ALIASES = {
@@ -567,6 +582,7 @@ def run_generation(master: str, jd: str, cfg: dict) -> None:
     st.session_state.match_analysis = parsed.match_analysis
     st.session_state.tailored_resume = parsed.tailored_resume
     st.session_state.removed_implicit = parsed.removed_implicit
+    st.session_state.restored_project_links = parsed.restored_project_links
     st.session_state.generated_at = datetime.now()
     placeholder.empty()
 

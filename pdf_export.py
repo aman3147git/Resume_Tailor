@@ -21,6 +21,8 @@ from reportlab.platypus import (
     PageTemplate,
     Paragraph,
     Spacer,
+    Table,
+    TableStyle,
 )
 from reportlab.platypus.flowables import HRFlowable
 
@@ -146,7 +148,8 @@ def _build(md_text: str, style: StyleHints, scale: float) -> tuple[bytes, int]:
 def _build_styles(style: StyleHints, scale: float = 1.0) -> dict[str, ParagraphStyle]:
     """Build a stylesheet keyed by markdown element. All sizes / spacing are
     multiplied by `scale` so the layout shrinks proportionally when needed."""
-    accent = HexColor(style.accent_hex) if style.accent_hex else HexColor("#0B3D91")
+    accent_hex_str = style.accent_hex or "#0B3D91"
+    accent = HexColor(accent_hex_str)
 
     if style.font_family == "Times-Roman":
         body_font = "Times-Roman"
@@ -203,6 +206,16 @@ def _build_styles(style: StyleHints, scale: float = 1.0) -> dict[str, ParagraphS
             spaceBefore=s(4),
             spaceAfter=0,
         ),
+        "h3_right": ParagraphStyle(
+            name="H3Right",
+            fontName=italic_font,
+            fontSize=s(9.5),
+            leading=s(13),
+            textColor=HexColor("#555555"),
+            spaceBefore=s(4),
+            spaceAfter=0,
+            alignment=2,  # right
+        ),
         "subhead": ParagraphStyle(
             name="Subhead",
             fontName=italic_font,
@@ -231,6 +244,7 @@ def _build_styles(style: StyleHints, scale: float = 1.0) -> dict[str, ParagraphS
             spaceAfter=0,
         ),
         "accent_color": accent,
+        "_accent_hex": accent_hex_str,
         "_bold_font": bold_font,
         "_italic_font": italic_font,
         "_body_font": body_font,
@@ -243,25 +257,104 @@ _INLINE_BOLD = re.compile(r"\*\*([^*]+)\*\*")
 _INLINE_ITALIC = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)")
 _INLINE_CODE = re.compile(r"`([^`]+)`")
 _INLINE_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_PROJECT_PIPE_RE = re.compile(r"\s*\|\s*")
+_MD_LINK_ONLY_RE = re.compile(r"^\[([^\]]+)\]\(([^)]+)\)$")
 
 
-def _md_inline_to_html(text: str) -> str:
+def _md_inline_to_html(text: str, accent_hex: str = "#0B3D91") -> str:
     """Convert inline markdown to reportlab-compatible HTML."""
     s = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    s = _INLINE_LINK.sub(r'<link href="\2" color="#0B3D91">\1</link>', s)
+    s = _INLINE_LINK.sub(
+        lambda m: f'<link href="{m.group(2)}" color="{accent_hex}">{m.group(1)}</link>',
+        s,
+    )
     s = _INLINE_BOLD.sub(r"<b>\1</b>", s)
     s = _INLINE_ITALIC.sub(r"<i>\1</i>", s)
     s = _INLINE_CODE.sub(r'<font face="Courier">\1</font>', s)
     return s
 
 
+def _parse_project_header(text: str) -> dict | None:
+    """If `text` has the shape `Title | [Link](url) | Timeline`, return
+    {title, link_label, link_url, timeline}. Otherwise return None.
+
+    Link and Timeline are both optional, but at least one `|` segment must
+    exist for this to be treated as a project header.
+    """
+    if "|" not in text:
+        return None
+    parts = [p.strip() for p in _PROJECT_PIPE_RE.split(text) if p.strip()]
+    if len(parts) < 2:
+        return None
+    title = parts[0]
+    link_label: str | None = None
+    link_url: str | None = None
+    timeline: str | None = None
+    for part in parts[1:]:
+        m = _MD_LINK_ONLY_RE.match(part)
+        if m and link_url is None:
+            link_label = m.group(1).strip()
+            link_url = m.group(2).strip()
+            continue
+        if timeline is None:
+            timeline = part
+    if link_url is None and timeline is None:
+        return None
+    return {
+        "title": title,
+        "link_label": link_label,
+        "link_url": link_url,
+        "timeline": timeline,
+    }
+
+
+def _build_project_header_flowable(parsed: dict, styles: dict):
+    """Render a project header as a 2-column Table:
+       [ Title  <Link> ]              [ Timeline (right-aligned) ]
+    """
+    accent_hex = styles["_accent_hex"]
+    title_html = parsed["title"].replace("&", "&amp;")
+    if parsed.get("link_url"):
+        label = parsed.get("link_label") or "Link"
+        link_html = (
+            f'&nbsp;&nbsp;&nbsp;<font size="{styles["h3"].fontSize - 0.5:.1f}">'
+            f'<link href="{parsed["link_url"]}" color="{accent_hex}">'
+            f'{label}</link></font>'
+        )
+        left_html = f"{title_html}{link_html}"
+    else:
+        left_html = title_html
+    left = Paragraph(left_html, styles["h3"])
+
+    right_html = parsed.get("timeline") or ""
+    right = Paragraph(right_html.replace("&", "&amp;"), styles["h3_right"])
+
+    frame_w = _PAGE_W - _LEFT - _RIGHT
+    table = Table(
+        [[left, right]],
+        colWidths=[frame_w * 0.65, frame_w * 0.35],
+        hAlign="LEFT",
+    )
+    table.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return table
+
+
 def _markdown_to_flowables(md_text: str, styles: dict) -> list:
     """Turn the tailored markdown into a list of reportlab Flowables."""
     flowables: list = []
     lines = md_text.splitlines()
+    accent_hex = styles["_accent_hex"]
+
+    def to_html(text: str) -> str:
+        return _md_inline_to_html(text, accent_hex=accent_hex)
 
     contact_collected = False
-    first_h2_after_name_pending = False
     name_done = False
 
     i = 0
@@ -277,7 +370,7 @@ def _markdown_to_flowables(md_text: str, styles: dict) -> list:
         if h_match:
             level = len(h_match.group(1))
             text = h_match.group(2).strip()
-            html = _md_inline_to_html(text)
+            html = to_html(text)
 
             if level == 1 or (not name_done and level == 2):
                 flowables.append(Paragraph(html, styles["name"]))
@@ -292,7 +385,7 @@ def _markdown_to_flowables(md_text: str, styles: dict) -> list:
                 while j < len(lines) and not lines[j].strip():
                     j += 1
                 if j < len(lines) and not re.match(r"^#+\s+", lines[j]):
-                    contact_html = _md_inline_to_html(lines[j].strip())
+                    contact_html = to_html(lines[j].strip())
                     flowables.append(Paragraph(contact_html, styles["contact"]))
                     i = j
                     contact_collected = True
@@ -309,24 +402,30 @@ def _markdown_to_flowables(md_text: str, styles: dict) -> list:
                 continue
 
             if level == 3:
-                flowables.append(Paragraph(html, styles["h3"]))
-                # Peek for an italic subhead line on the next non-empty row.
-                j = i + 1
-                while j < len(lines) and not lines[j].strip():
-                    j += 1
-                if j < len(lines):
-                    nxt = lines[j].strip()
-                    if (nxt.startswith("*") and nxt.endswith("*")
-                            and not nxt.startswith("**")):
-                        flowables.append(Paragraph(
-                            _md_inline_to_html(nxt.strip("*").strip()),
-                            styles["subhead"],
-                        ))
-                        i = j
+                parsed = _parse_project_header(text)
+                if parsed:
+                    flowables.append(_build_project_header_flowable(parsed, styles))
+                else:
+                    flowables.append(Paragraph(html, styles["h3"]))
+                # Peek for an italic subhead line on the next non-empty row
+                # (only for non-project headers; project headers carry their
+                # own timeline inline).
+                if not parsed:
+                    j = i + 1
+                    while j < len(lines) and not lines[j].strip():
+                        j += 1
+                    if j < len(lines):
+                        nxt = lines[j].strip()
+                        if (nxt.startswith("*") and nxt.endswith("*")
+                                and not nxt.startswith("**")):
+                            flowables.append(Paragraph(
+                                to_html(nxt.strip("*").strip()),
+                                styles["subhead"],
+                            ))
+                            i = j
                 i += 1
                 continue
 
-            # h4+ falls back to body
             flowables.append(Paragraph(html, styles["body"]))
             i += 1
             continue
@@ -334,7 +433,7 @@ def _markdown_to_flowables(md_text: str, styles: dict) -> list:
         bullet_match = re.match(r"^[-*+]\s+(.*)$", stripped)
         if bullet_match:
             text = bullet_match.group(1)
-            html = _md_inline_to_html(text)
+            html = to_html(text)
             flowables.append(Paragraph(html, styles["bullet"], bulletText="\u2022"))
             i += 1
             continue
@@ -342,7 +441,7 @@ def _markdown_to_flowables(md_text: str, styles: dict) -> list:
         num_bullet = re.match(r"^\d+\.\s+(.*)$", stripped)
         if num_bullet:
             text = num_bullet.group(1)
-            flowables.append(Paragraph(_md_inline_to_html(text),
+            flowables.append(Paragraph(to_html(text),
                                         styles["bullet"], bulletText="\u2022"))
             i += 1
             continue
@@ -357,20 +456,19 @@ def _markdown_to_flowables(md_text: str, styles: dict) -> list:
 
         if stripped.startswith("*") and stripped.endswith("*") and not stripped.startswith("**"):
             flowables.append(Paragraph(
-                _md_inline_to_html(stripped.strip("*").strip()),
+                to_html(stripped.strip("*").strip()),
                 styles["subhead"],
             ))
             i += 1
             continue
 
         if not contact_collected and name_done:
-            flowables.append(Paragraph(_md_inline_to_html(stripped),
-                                        styles["contact"]))
+            flowables.append(Paragraph(to_html(stripped), styles["contact"]))
             contact_collected = True
             i += 1
             continue
 
-        flowables.append(Paragraph(_md_inline_to_html(stripped), styles["body"]))
+        flowables.append(Paragraph(to_html(stripped), styles["body"]))
         i += 1
 
     return flowables

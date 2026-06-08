@@ -46,7 +46,11 @@ Your task is to tailor a candidate's resume for a specific job description.
     Group by category (Languages, Frameworks, Databases, Cloud/DevOps, etc.).
 16. Experience: 3-5 bullets per role, ≤ 25 words per bullet. Lead with the
     most JD-relevant achievement.
-17. Projects: 3-4 bullets per project; keep 2-3 most relevant projects.
+17. Projects: include EVERY project from the master resume if the master has
+    3 or fewer total projects. NEVER drop a project just because it seems
+    less JD-relevant — the candidate has few projects, every one counts.
+    Only if the master has 4+ projects may you pick the top 3 by relevance.
+    Each project: 3-4 achievement bullets, ≤ 25 words per bullet.
 18. Education: one line per degree plus optional one-line coursework / GPA note.
 19. Achievements / Awards / etc.: keep 4-6 of the most JD-relevant items as bullets.
 20. If after writing everything you sense the page would be less than full,
@@ -123,11 +127,35 @@ Your task is to tailor a candidate's resume for a specific job description.
     Ended roles use PAST tense ("Designed", "Built", "Shipped"). Never mix
     past tense with an ongoing role — it reads as if the candidate left.
 
-29. PRESERVE every URL / handle from the master resume verbatim — GitHub
-    project links, LinkedIn, personal site, demo URLs, paper DOIs. If the
-    master resume puts a link next to a project name (e.g.
-    `### EchoPlay — github.com/aman/echoplay`), keep that link in the same
-    place in the tailored output. Never invent URLs.
+29. PRESERVE every URL / handle from the master resume verbatim — project
+    demos, GitHub repos, LinkedIn, personal site, paper DOIs. NEVER drop,
+    paraphrase, or invent a URL.
+
+    PROJECT HEADER FORMAT — use this EXACT shape, all on one line:
+
+      ### <Project Title> | [Link](<URL from master>) | <Timeline from master>
+
+    Worked example using the real Talent-Agent project:
+
+      ### Talent-Agent | [Link](https://talentagent-aman.streamlit.app/) | Jan 2026 – Mar 2026
+      - **Stack:** LangGraph, MCP, Streamlit
+      - <achievement bullet 1>
+      - <achievement bullet 2>
+      - <achievement bullet 3>
+
+    Rules for the header line:
+      - NEVER write the raw URL as visible text — always wrap it as `[Link](url)`
+        so it renders as a clickable word.
+      - The link label is the literal word "Link" (or "Demo" / "Repo" if the
+        master explicitly uses one of those). Nothing else.
+      - The Stack bullet stays as the FIRST bullet under the header (not in
+        the header line). Trim Stack to JD-relevant tech if needed.
+      - Omit `| [Link](url)` ONLY if the master has no URL for that project.
+      - Omit `| <Timeline>` ONLY if the master has no timeline for it.
+      - Never invent a URL or a timeline.
+
+    For the CONTACT line, preserve markdown links exactly as written, even
+    if they look slightly malformed — the user formats them deliberately.
 
 30. DO NOT list a skill in Technical Skills unless it is either:
       (a) used in at least one Experience or Project bullet in this tailored
@@ -191,7 +219,8 @@ Potential Gaps:
 
 ## Projects
 
-### <Project Name>
+### <Project Name> | [Link](<URL>) | <Timeline>
+- **Stack:** <comma-separated JD-relevant tech>   (ONLY if master has it)
 - bullet
 - bullet
 
