@@ -581,8 +581,14 @@ def run_generation(master: str, jd: str, cfg: dict) -> None:
     st.session_state.raw_output = parsed.raw
     st.session_state.match_analysis = parsed.match_analysis
     st.session_state.tailored_resume = parsed.tailored_resume
-    st.session_state.removed_implicit = parsed.removed_implicit
-    st.session_state.restored_project_links = parsed.restored_project_links
+    # Defensive getattr: Streamlit Cloud's hot-reload sometimes caches an
+    # older version of the `tailor` module after a push, so newer fields on
+    # TailoredOutput can be missing in `parsed`. Falling back to [] keeps
+    # the app functional until the user reboots the app to clear sys.modules.
+    st.session_state.removed_implicit = getattr(parsed, "removed_implicit", []) or []
+    st.session_state.restored_project_links = (
+        getattr(parsed, "restored_project_links", []) or []
+    )
     st.session_state.generated_at = datetime.now()
     placeholder.empty()
 
