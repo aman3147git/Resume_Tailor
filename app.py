@@ -82,6 +82,7 @@ def init_state() -> None:
     st.session_state.setdefault("job_description", "")
     st.session_state.setdefault("template_style", None)
     st.session_state.setdefault("template_pdf_name", None)
+    st.session_state.setdefault("removed_implicit", [])
 
 
 def render_sidebar() -> dict:
@@ -270,6 +271,7 @@ def render_outputs() -> None:
     with tab_resume:
         if st.session_state.tailored_resume:
             _check_gaps_present()
+            _show_filtered_implicit_skills()
             st.markdown(st.session_state.tailored_resume)
             st.divider()
             _render_downloads()
@@ -358,6 +360,24 @@ def _check_gaps_present() -> None:
         )
 
     _check_sections_present()
+
+
+def _show_filtered_implicit_skills() -> None:
+    """If we stripped implicit-prerequisite skills from Currently Exploring,
+    surface what was removed so the user has full transparency."""
+    removed = st.session_state.get("removed_implicit") or []
+    if not removed:
+        return
+    with st.expander(
+        f"Filtered {len(removed)} implicit skill(s) from Currently Exploring",
+        expanded=False,
+    ):
+        st.caption(
+            "These were removed because your existing skills already imply "
+            "competence (e.g. React implies HTML/CSS/JavaScript). Listing them "
+            "would look naive to a recruiter."
+        )
+        st.markdown(", ".join(f"`{s}`" for s in removed))
 
 
 _SECTION_ALIASES = {
@@ -542,10 +562,11 @@ def run_generation(master: str, jd: str, cfg: dict) -> None:
         return
 
     raw = "".join(buffer)
-    parsed = parse_output(raw)
+    parsed = parse_output(raw, master_resume=master)
     st.session_state.raw_output = parsed.raw
     st.session_state.match_analysis = parsed.match_analysis
     st.session_state.tailored_resume = parsed.tailored_resume
+    st.session_state.removed_implicit = parsed.removed_implicit
     st.session_state.generated_at = datetime.now()
     placeholder.empty()
 

@@ -59,14 +59,90 @@ Your task is to tailor a candidate's resume for a specific job description.
 # Closing the gap (MANDATORY)
 23. The final bullet of the Technical Skills section MUST be exactly:
     `- **Currently Exploring:** <comma-separated list>`
-    The list must contain every item you placed under "Potential Gaps" / "Missing Skills"
-    in the Match Analysis above, with these constraints:
-      - 3 to 8 items (pick the most JD-critical if there are more than 8)
-      - Use the same terminology as the JD
-      - Order by importance to the JD
-      - Do NOT phrase this as experience anywhere else in the resume
+    DO NOT dump every Missing Skill / Potential Gap here. Pick the
+    **3-4 most JD-critical** items only, with these constraints:
+      - Hard maximum: 4 items. A long list signals desperation/padding.
+      - Each item must be a real, named technology or concept — never a tool
+        category, a dev-environment ("Cursor", "VS Code", "Claude Code"), or
+        a sub-skill of something already listed.
+      - Use the EXACT terminology used in the JD.
+      - Order by importance to the JD (most critical first).
+      - Do NOT phrase this as experience anywhere else in the resume.
     The ONLY case where you may omit this bullet is if BOTH "Missing Skills" and
-    "Potential Gaps" in the Match Analysis are empty. Otherwise this bullet is required.
+    "Potential Gaps" in the Match Analysis are empty, OR if every gap turns out
+    to be an implicit prerequisite the candidate already covers (see rule 24).
+
+24. CRITICAL — EXCLUDE IMPLICIT PREREQUISITES from the Currently Exploring list.
+    Never list a skill that the candidate obviously already knows by virtue of
+    knowing a more advanced / related skill. Listing such skills makes the
+    candidate look naive. Apply common-sense dependency reasoning:
+      - React → IMPLIES HTML, CSS, JavaScript, JSX, DOM, frontend
+      - Next.js → IMPLIES React, Node.js, JavaScript, HTML, CSS, SSR
+      - Tailwind CSS → IMPLIES CSS, HTML
+      - TypeScript → IMPLIES JavaScript
+      - Node.js → IMPLIES JavaScript, npm
+      - Express.js → IMPLIES Node.js, HTTP, REST
+      - Django / Flask / FastAPI → IMPLIES Python, HTTP, REST
+      - PyTorch / TensorFlow → IMPLIES Python, NumPy, deep learning, tensors
+      - Pandas → IMPLIES Python, NumPy
+      - LangChain → IMPLIES Python, LLMs, OpenAI API
+      - Kubernetes → IMPLIES Docker, YAML, containers, Linux
+      - Docker → IMPLIES Linux, shell, YAML, containers
+      - GitHub Actions → IMPLIES Git, GitHub, YAML, CI/CD
+      - AWS EC2 / S3 / Lambda → IMPLIES AWS (and Lambda → serverless)
+      - PostgreSQL / MySQL → IMPLIES SQL, RDBMS, databases
+      - MongoDB → IMPLIES NoSQL, databases, JSON
+      - Spring Boot → IMPLIES Java, Spring, Maven, REST
+      - JWT / OAuth2 → IMPLIES authentication, HTTP
+      - Kafka → IMPLIES distributed systems, messaging, pub/sub
+    Apply this rule recursively (e.g. Next.js implies React which implies HTML).
+    If after applying this rule the Currently Exploring list would be empty,
+    that's fine — just omit the bullet entirely.
+
+# Writing Quality (apply to EVERY bullet)
+25. BANNED weasel words — never use these unless quoting the JD verbatim:
+    "robust", "seamless", "nuanced", "comprehensive", "significantly", "various",
+    "leveraging" (use "using"), "utilized" (use "used"), "high-performance"
+    (unless followed by a real number), "scalable" (unless followed by a real
+    scale figure), "innovative", "cutting-edge", "synergy", "holistic",
+    "spearheaded", "passionate". If you find yourself reaching for one of
+    these, replace it with a number, a tool name, or delete it.
+26. QUANTIFY ruthlessly. Every bullet should contain at least ONE of:
+    a metric (%, ms, $, x, count), a scale figure (users, requests/day, GB),
+    or a specific tool/version. Bullets like "improved efficiency" without a
+    number are forbidden — pull the number from the master resume if it's
+    there, otherwise rewrite the bullet around what IS measurable.
+27. EXPAND acronyms on first use unless they are universally recognized.
+    Universal-OK: API, SQL, REST, JSON, HTTP, AWS, GCP, ML, AI, OS, CSS, HTML,
+    URL, UI, UX, CLI, IDE, CI/CD, JWT, OAuth, IAM, CPU, GPU, RAM.
+    Must expand: HITL (human-in-the-loop), RAG (retrieval-augmented generation),
+    AST/CST, MCP, SLA, SLO, MVP, TDD, OOP, and any internal/company acronyms.
+    Format: `Human-In-The-Loop (HITL)` on first occurrence, then HITL freely.
+28. TENSE consistency. An "Ongoing" / "Present" / "Current" role uses
+    PRESENT or PRESENT-PERFECT tense ("Design", "Building", "Have shipped").
+    Ended roles use PAST tense ("Designed", "Built", "Shipped"). Never mix
+    past tense with an ongoing role — it reads as if the candidate left.
+
+29. PRESERVE every URL / handle from the master resume verbatim — GitHub
+    project links, LinkedIn, personal site, demo URLs, paper DOIs. If the
+    master resume puts a link next to a project name (e.g.
+    `### EchoPlay — github.com/aman/echoplay`), keep that link in the same
+    place in the tailored output. Never invent URLs.
+
+30. DO NOT list a skill in Technical Skills unless it is either:
+      (a) used in at least one Experience or Project bullet in this tailored
+          resume, OR
+      (b) explicitly named in the JD as a required/preferred skill.
+    Skills the candidate has but cannot demonstrate AND that the JD doesn't
+    ask for should be dropped from this tailored copy — they only weaken the
+    relevance signal. (They stay in the master, just not in this tailoring.)
+
+31. IDENTITY focus. The Summary line MUST present ONE primary identity
+    aligned to the JD's seniority + role, not a fused dual-title.
+    BAD: "Full-stack ML engineer with..."
+    GOOD (for an ML role): "ML engineer with full-stack delivery experience..."
+    GOOD (for a backend role): "Backend engineer with applied AI/LLM experience..."
+    Pick the lead title from the JD, then describe secondary strengths after.
 
 # Output Format (return EXACTLY this structure in markdown — no extra commentary)
 

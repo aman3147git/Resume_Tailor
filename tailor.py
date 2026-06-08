@@ -12,15 +12,22 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterator, Literal
 
 from prompt import SYSTEM_PROMPT, build_user_prompt
+from skill_dependencies import filter_exploring_items
 
 
 Provider = Literal["anthropic", "openai"]
 
 DEFAULT_MAX_TOKENS = 4096
+
+# Hard cap on the Currently Exploring bullet — keep only the top-N
+# JD-critical items after the implicit-prerequisite filter has run.
+# The model is already prompted to obey this (rule 23) but we enforce
+# it deterministically so a misbehaving model can't slip a long list in.
+MAX_EXPLORING_ITEMS = 4
 
 DEFAULT_MODELS: dict[Provider, str] = {
     "anthropic": "claude-sonnet-4-5",
@@ -57,6 +64,7 @@ class TailoredOutput:
     raw: str
     match_analysis: str
     tailored_resume: str
+    removed_implicit: list[str] = field(default_factory=list)
 
 
 def _resolve_key(provider: Provider, api_key: str | None) -> str:
@@ -119,7 +127,7 @@ def generate_tailored_resume(
             max_tokens=max_tokens,
         )
     )
-    return parse_output("".join(chunks))
+    return parse_output("".join(chunks), master_resume=master_resume)
 
 
 def _stream_anthropic(
@@ -166,8 +174,13 @@ _MATCH_HEADER = re.compile(r"^#\s*Match Analysis\s*$", re.IGNORECASE | re.MULTIL
 _RESUME_HEADER = re.compile(r"^#\s*Tailored Resume\s*$", re.IGNORECASE | re.MULTILINE)
 
 
-def parse_output(raw: str) -> TailoredOutput:
-    """Split the raw model response into Match Analysis + Tailored Resume sections."""
+def parse_output(raw: str, master_resume: str = "") -> TailoredOutput:
+    """Split the raw model response into Match Analysis + Tailored Resume sections.
+
+    `master_resume` (optional) is used to compute the candidate's known skills so
+    we can filter implicit prerequisites out of the Currently Exploring line.
+    Without it, only skills in the tailored output itself are considered known.
+    """
     match_start = _MATCH_HEADER.search(raw)
     resume_start = _RESUME_HEADER.search(raw)
 
@@ -181,12 +194,15 @@ def parse_output(raw: str) -> TailoredOutput:
         match_analysis = ""
         tailored_resume = raw.strip()
 
-    tailored_resume = _clean_tailored_resume(tailored_resume)
+    tailored_resume, removed_implicit = _clean_tailored_resume(
+        tailored_resume, master_resume=master_resume,
+    )
 
     return TailoredOutput(
         raw=raw,
         match_analysis=match_analysis,
         tailored_resume=tailored_resume,
+        removed_implicit=removed_implicit,
     )
 
 
@@ -210,16 +226,22 @@ _META_PHRASES = (
 )
 
 
-def _clean_tailored_resume(md: str) -> str:
+def _clean_tailored_resume(
+    md: str, master_resume: str = ""
+) -> tuple[str, list[str]]:
     """Post-process the model's resume markdown to remove common slip-ups:
 
       - lines that are pure placeholder text ([Include ...], [TBD], etc.)
       - empty sections (header followed by no real content or only a placeholder)
       - trailing meta-commentary paragraphs about the resume itself
       - "(if available)" / "(only if)" parenthetical notes
+      - implicit prerequisites in the Currently Exploring line
+        (e.g. don't list HTML if the candidate has React)
+
+    Returns (cleaned_markdown, removed_implicit_skills).
     """
     if not md:
-        return md
+        return md, []
 
     raw_lines = md.splitlines()
 
@@ -258,11 +280,105 @@ def _clean_tailored_resume(md: str) -> str:
             continue
         break
 
+    # Filter implicit prerequisites out of Currently Exploring.
+    pruned, removed_implicit = _filter_currently_exploring(pruned, master_resume)
+
     # Remove empty sections: a `##`/`###` header whose body has no real content
     # before the next header.
     pruned = _drop_empty_sections(pruned)
 
-    return "\n".join(pruned).strip()
+    return "\n".join(pruned).strip(), removed_implicit
+
+
+_SKILLS_HEADER_RE = re.compile(
+    r"^##\s+(?:Technical\s+Skills|Skills|Technologies?|Tech\s+Stack|"
+    r"Core\s+Competencies)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_NEXT_SECTION_RE = re.compile(r"^##\s+", re.MULTILINE)
+_BULLET_LABEL_RE = re.compile(r"\*\*[^*]+?\*\*:?\s*(.*)$")
+_EXPLORING_RE = re.compile(
+    r"^(\s*[-*+]\s+\*\*\s*Currently\s+Exploring\s*:?\s*\*\*\s*:?\s*)(.*)$",
+    re.IGNORECASE,
+)
+
+
+def extract_known_skills(md: str) -> set[str]:
+    """Extract every skill listed in the Technical Skills section of a resume.
+
+    Skips the `Currently Exploring` line itself, since those are NOT known skills.
+    """
+    if not md:
+        return set()
+
+    m = _SKILLS_HEADER_RE.search(md)
+    if not m:
+        return set()
+
+    section_start = m.end()
+    nxt = _NEXT_SECTION_RE.search(md, section_start)
+    section_end = nxt.start() if nxt else len(md)
+    section = md[section_start:section_end]
+
+    skills: set[str] = set()
+    for line in section.splitlines():
+        line = line.strip()
+        if not re.match(r"^[-*+]\s", line):
+            continue
+        body = re.sub(r"^[-*+]\s+", "", line)
+        if re.match(r"\*\*\s*currently\s+exploring", body, re.IGNORECASE):
+            continue
+        label_match = _BULLET_LABEL_RE.match(body)
+        content = label_match.group(1) if label_match else body
+        for item in re.split(r"[,;/|]| and ", content):
+            cleaned = item.strip().strip("*_`").strip()
+            cleaned = re.sub(r"\s*\([^)]*\)\s*$", "", cleaned)
+            if cleaned and 1 < len(cleaned) < 50:
+                skills.add(cleaned)
+    return skills
+
+
+def _filter_currently_exploring(
+    lines: list[str], master_resume: str
+) -> tuple[list[str], list[str]]:
+    """Filter implicit prerequisites out of the Currently Exploring bullet.
+
+    Considers skills from BOTH the tailored output AND the master resume as
+    "known", so even skills the model dropped from the tailored version still
+    count when deciding what's a real gap.
+
+    Returns (new_lines, list_of_removed_items).
+    """
+    tailored_skills = extract_known_skills("\n".join(lines))
+    master_skills = extract_known_skills(master_resume) if master_resume else set()
+    known = tailored_skills | master_skills
+
+    if not known:
+        return lines, []
+
+    removed_total: list[str] = []
+    new_lines: list[str] = []
+    for line in lines:
+        m = _EXPLORING_RE.match(line)
+        if not m:
+            new_lines.append(line)
+            continue
+        prefix, items_str = m.group(1), m.group(2)
+        items = [s.strip() for s in re.split(r",\s*", items_str) if s.strip()]
+        kept, removed = filter_exploring_items(items, known)
+        removed_total.extend(removed)
+        # Enforce the hard cap. The model is instructed to obey this in the
+        # prompt, but we keep only the first MAX_EXPLORING_ITEMS items
+        # (the prompt requires the model to order by JD-importance, so the
+        # earliest items are the most critical).
+        if len(kept) > MAX_EXPLORING_ITEMS:
+            removed_total.extend(kept[MAX_EXPLORING_ITEMS:])
+            kept = kept[:MAX_EXPLORING_ITEMS]
+        if not kept:
+            # Everything was implicit — drop the whole line.
+            continue
+        new_lines.append(f"{prefix}{', '.join(kept)}")
+    return new_lines, removed_total
 
 
 def _drop_empty_sections(lines: list[str]) -> list[str]:
