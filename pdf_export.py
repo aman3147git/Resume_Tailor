@@ -275,11 +275,11 @@ def _md_inline_to_html(text: str, accent_hex: str = "#0B3D91") -> str:
 
 
 def _parse_project_header(text: str) -> dict | None:
-    """If `text` has the shape `Title | [Link](url) | Timeline`, return
-    {title, link_label, link_url, timeline}. Otherwise return None.
+    """Parse a `Title | [Link](url) | [GitHub](url) | Timeline` H3 line.
 
-    Link and Timeline are both optional, but at least one `|` segment must
-    exist for this to be treated as a project header.
+    All `[label](url)` chunks after the title are collected as links; any
+    non-link chunk becomes the timeline. Returns None if the text isn't
+    shaped like a project header.
     """
     if "|" not in text:
         return None
@@ -287,52 +287,55 @@ def _parse_project_header(text: str) -> dict | None:
     if len(parts) < 2:
         return None
     title = parts[0]
-    link_label: str | None = None
-    link_url: str | None = None
+    links: list[dict] = []
     timeline: str | None = None
     for part in parts[1:]:
         m = _MD_LINK_ONLY_RE.match(part)
-        if m and link_url is None:
-            link_label = m.group(1).strip()
-            link_url = m.group(2).strip()
+        if m:
+            links.append({"label": m.group(1).strip(), "url": m.group(2).strip()})
             continue
         if timeline is None:
             timeline = part
-    if link_url is None and timeline is None:
+    if not links and timeline is None:
         return None
-    return {
-        "title": title,
-        "link_label": link_label,
-        "link_url": link_url,
-        "timeline": timeline,
-    }
+    return {"title": title, "links": links, "timeline": timeline}
 
 
 def _build_project_header_flowable(parsed: dict, styles: dict):
     """Render a project header as a 2-column Table:
-       [ Title  <Link> ]              [ Timeline (right-aligned) ]
+       [ Title  <Link>  <GitHub> ]         [ Timeline (right-aligned) ]
+
+    Every link in `parsed["links"]` renders as a clickable accent-coloured
+    word separated from the title (and each other) by a small space. Falls
+    back gracefully when a project has zero, one, or many links.
     """
     accent_hex = styles["_accent_hex"]
     title_html = parsed["title"].replace("&", "&amp;")
-    if parsed.get("link_url"):
-        label = parsed.get("link_label") or "Link"
-        link_html = (
-            f'&nbsp;&nbsp;&nbsp;<font size="{styles["h3"].fontSize - 0.5:.1f}">'
-            f'<link href="{parsed["link_url"]}" color="{accent_hex}">'
-            f'{label}</link></font>'
+    link_font_size = styles["h3"].fontSize - 0.5
+
+    link_chunks: list[str] = []
+    for link in parsed.get("links") or []:
+        url = (link.get("url") or "").strip()
+        label = (link.get("label") or "Link").strip() or "Link"
+        if not url:
+            continue
+        link_chunks.append(
+            f'&nbsp;&nbsp;&nbsp;<font size="{link_font_size:.1f}">'
+            f'<link href="{url}" color="{accent_hex}">{label}</link></font>'
         )
-        left_html = f"{title_html}{link_html}"
-    else:
-        left_html = title_html
+    left_html = title_html + "".join(link_chunks)
     left = Paragraph(left_html, styles["h3"])
 
-    right_html = parsed.get("timeline") or ""
-    right = Paragraph(right_html.replace("&", "&amp;"), styles["h3_right"])
+    right_html = (parsed.get("timeline") or "").replace("&", "&amp;")
+    right = Paragraph(right_html, styles["h3_right"])
 
     frame_w = _PAGE_W - _LEFT - _RIGHT
+    # Widen left column when there are multiple links so they don't crowd.
+    n_links = len([l for l in (parsed.get("links") or []) if l.get("url")])
+    left_ratio = 0.72 if n_links >= 2 else 0.65
     table = Table(
         [[left, right]],
-        colWidths=[frame_w * 0.65, frame_w * 0.35],
+        colWidths=[frame_w * left_ratio, frame_w * (1 - left_ratio)],
         hAlign="LEFT",
     )
     table.setStyle(TableStyle([

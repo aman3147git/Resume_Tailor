@@ -290,6 +290,11 @@ def _clean_tailored_resume(
     # project the model dropped (including its bullets, from master).
     pruned, restored_links = _normalize_and_restore_projects(pruned, master_resume)
 
+    # Ensure Experience/Projects bullets end with terminal punctuation so no
+    # sentence trails off (the model occasionally forgets a period, and
+    # rule 16/17 mandate one).
+    pruned = _enforce_bullet_terminators(pruned)
+
     # Remove empty sections: a `##`/`###` header whose body has no real content
     # before the next header.
     pruned = _drop_empty_sections(pruned)
@@ -388,6 +393,73 @@ def _filter_currently_exploring(
     return new_lines, removed_total
 
 
+_TERMINAL_PUNCT = (".", "!", "?", ":")
+_META_BULLET_RE = re.compile(
+    r"^\s*[-*+]\s+\*\*\s*(?:Stack|Link|Demo|URL|Live|Repo|GitHub|Timeline|"
+    r"Currently\s+Exploring)\s*:?\s*\*\*",
+    re.IGNORECASE,
+)
+_TERMINATE_SECTIONS = (
+    "experience", "work experience", "professional experience", "employment",
+    "projects", "project", "personal projects", "selected projects",
+    "achievements", "awards", "achievements & awards", "honors & awards",
+    "achievements and awards", "leadership", "activities", "volunteer",
+)
+
+
+def _enforce_bullet_terminators(lines: list[str]) -> list[str]:
+    """Within Experience/Projects/Achievements sections, ensure every prose
+    bullet ends with a period. Skips meta-bullets (**Stack:**, **Link:**,
+    **Currently Exploring:**, etc.) since those are structured labels, not
+    sentences.
+
+    Runs after project-normalization so **Link:**/**Timeline:** bullets have
+    already been folded into the header line.
+    """
+    out: list[str] = []
+    in_target_section = False
+    for line in lines:
+        m = re.match(r"^##\s+(.+?)\s*$", line)
+        if m:
+            title = re.sub(r"[^a-z &]", "", m.group(1).lower()).strip()
+            in_target_section = title in _TERMINATE_SECTIONS
+            out.append(line)
+            continue
+        if not in_target_section:
+            out.append(line)
+            continue
+        stripped = line.strip()
+        if not stripped or not re.match(r"^[-*+]\s+", stripped):
+            out.append(line)
+            continue
+        if _META_BULLET_RE.match(stripped):
+            out.append(line)
+            continue
+        # Strip any trailing markdown emphasis markers so we can inspect the
+        # true last character.
+        tail = stripped.rstrip()
+        while tail and tail[-1] in "*_`":
+            tail = tail[:-1].rstrip()
+        if not tail:
+            out.append(line)
+            continue
+        if tail[-1] in _TERMINAL_PUNCT:
+            out.append(line)
+            continue
+        # Preserve original trailing decorations and just append the period
+        # BEFORE any trailing emphasis markers if they exist.
+        trailing_markers = ""
+        j = len(line) - 1
+        while j >= 0 and line[j] in " \t":
+            j -= 1
+        while j >= 0 and line[j] in "*_`":
+            trailing_markers = line[j] + trailing_markers
+            j -= 1
+        core = line[: j + 1]
+        out.append(f"{core}.{trailing_markers}")
+    return out
+
+
 _PROJECTS_SECTION_RE = re.compile(
     r"^##\s+Projects?\s*$", re.IGNORECASE | re.MULTILINE,
 )
@@ -420,34 +492,64 @@ def _normalize_project_name(name: str) -> str:
 
 
 def _parse_inline_project_header(text: str) -> dict | None:
-    """If `text` is `Title | [Link](url) | Timeline`, return parsed parts.
-    Otherwise return None."""
+    """Parse `Title | [Link](url) | [GitHub](url) | Timeline` into parts.
+
+    A project header must contain at least one `|`. All `[label](url)` chunks
+    are collected as links in encounter order; any non-link chunk after the
+    title becomes the timeline. Returns None if the text isn't shaped like a
+    project header.
+    """
     if "|" not in text:
         return None
     parts = [p.strip() for p in text.split("|") if p.strip()]
     if len(parts) < 2:
         return None
     title = parts[0]
-    url: str | None = None
-    label: str | None = None
+    links: list[dict] = []
     timeline: str | None = None
     for p in parts[1:]:
         m = _INLINE_MD_LINK_RE.match(p)
-        if m and url is None:
-            label = m.group(1).strip()
-            url = m.group(2).strip()
+        if m:
+            links.append({"label": m.group(1).strip(), "url": m.group(2).strip()})
             continue
         if timeline is None:
             timeline = p
-    return {"title": title, "url": url, "link_label": label, "timeline": timeline}
+    return {"title": title, "links": links, "timeline": timeline}
+
+
+def _canonical_link_label(label: str) -> str:
+    """Normalize a link label into the canonical form we render.
+
+    Master resumes commonly say Link, Demo, URL, Live, Repo, GitHub. We keep
+    `GitHub` as-is (case-sensitive) and coalesce Link/Demo/URL/Live into
+    `Link` since they all mean "the live/demo URL" to a reader.
+    """
+    lo = label.strip().lower()
+    if lo in {"github", "repo"}:
+        return "GitHub"
+    return "Link"
+
+
+def _link_key(url: str) -> str:
+    """Compare-friendly form of a URL for de-duplication."""
+    return url.strip().rstrip("/").lower()
 
 
 def _build_inline_project_header(
-    title: str, url: str | None, label: str | None, timeline: str | None,
+    title: str, links: list[dict], timeline: str | None,
 ) -> str:
-    parts = [title.strip()]
-    if url:
-        parts.append(f"[{(label or 'Link').strip()}]({url.strip()})")
+    parts: list[str] = [title.strip()]
+    seen: set[str] = set()
+    for link in links or []:
+        url = (link.get("url") or "").strip()
+        if not url:
+            continue
+        key = _link_key(url)
+        if key in seen:
+            continue
+        seen.add(key)
+        label = _canonical_link_label(link.get("label") or "Link")
+        parts.append(f"[{label}]({url})")
     if timeline:
         parts.append(timeline.strip())
     return "### " + " | ".join(parts)
@@ -476,42 +578,62 @@ def _iter_master_project_chunks(master_md: str):
 
 
 def _extract_master_project_meta(master_md: str) -> dict[str, dict]:
-    """Map normalized-name -> {name, url, link_label, timeline} from master."""
+    """Map normalized-name -> {name, links, timeline} for every project in master.
+
+    `links` is a list of {label, url} dicts collected in order, deduped by URL.
+    A project can therefore expose BOTH a live demo link and a GitHub repo.
+    """
     out: dict[str, dict] = {}
     for raw_name, body in _iter_master_project_chunks(master_md):
         key = _normalize_project_name(raw_name)
         if not key:
             continue
-        meta = {"name": raw_name.split("|")[0].strip(),
-                "url": None, "link_label": "Link", "timeline": None}
+        meta: dict = {
+            "name": raw_name.split("|")[0].strip(),
+            "links": [],
+            "timeline": None,
+        }
+        seen_urls: set[str] = set()
+
+        def add_link(label: str, url: str) -> None:
+            url = _strip_url_extras(url)
+            if not url:
+                return
+            k = _link_key(url)
+            if k in seen_urls:
+                return
+            seen_urls.add(k)
+            meta["links"].append({
+                "label": _canonical_link_label(label),
+                "url": url,
+            })
+
         parsed = _parse_inline_project_header(raw_name)
         if parsed:
             meta["name"] = parsed["title"]
-            if parsed.get("url"):
-                meta["url"] = parsed["url"]
-                meta["link_label"] = parsed.get("link_label") or "Link"
+            for link in parsed.get("links") or []:
+                add_link(link.get("label") or "Link", link.get("url") or "")
             if parsed.get("timeline"):
                 meta["timeline"] = parsed["timeline"]
+
         for line in body.splitlines():
             if re.match(r"^#{1,3}\s+", line):
                 break
             if not line.strip():
                 continue
             lm = _PROJECT_LINK_BULLET_RE.match(line)
-            if lm and meta["url"] is None:
+            if lm:
                 url_match = _URL_RE.search(lm.group("rest"))
                 if url_match:
-                    meta["url"] = _strip_url_extras(url_match.group(0))
-                    meta["link_label"] = lm.group("label").capitalize() \
-                        if lm.group("label").lower() != "url" else "Link"
+                    add_link(lm.group("label"), url_match.group(0))
                 continue
             tm = _PROJECT_TIMELINE_BULLET_RE.match(line)
             if tm and meta["timeline"] is None:
                 meta["timeline"] = tm.group("rest").strip()
                 continue
             bm = _BARE_URL_BULLET_RE.match(line)
-            if bm and meta["url"] is None:
-                meta["url"] = _strip_url_extras(bm.group(1))
+            if bm:
+                add_link("Link", bm.group(1))
         out[key] = meta
     return out
 
@@ -575,8 +697,7 @@ def _normalize_and_restore_projects(
         full_text = header.group(1)
         parsed = _parse_inline_project_header(full_text) or {}
         cur_title = parsed.get("title") or full_text
-        cur_url = parsed.get("url")
-        cur_label = parsed.get("link_label")
+        cur_links: list[dict] = list(parsed.get("links") or [])
         cur_timeline = parsed.get("timeline")
 
         key = _normalize_project_name(cur_title)
@@ -594,22 +715,32 @@ def _normalize_and_restore_projects(
             j += 1
         body_lines = lines[i + 1: j]
 
-        # Strip legacy Link/Timeline bullets; harvest URL + timeline if header
-        # didn't already carry them.
+        seen_urls: set[str] = {_link_key(l["url"]) for l in cur_links if l.get("url")}
+
+        def add_link(label: str, url: str) -> None:
+            url = _strip_url_extras(url)
+            if not url:
+                return
+            k = _link_key(url)
+            if k in seen_urls:
+                return
+            seen_urls.add(k)
+            cur_links.append({
+                "label": _canonical_link_label(label),
+                "url": url,
+            })
+
+        # Strip legacy Link/Timeline bullets; harvest URLs + timeline into
+        # the header line.
         kept_body: list[str] = []
         had_legacy_bullet = False
         for bl in body_lines:
             lm = _PROJECT_LINK_BULLET_RE.match(bl)
             if lm:
                 had_legacy_bullet = True
-                if cur_url is None:
-                    um = _URL_RE.search(lm.group("rest"))
-                    if um:
-                        cur_url = _strip_url_extras(um.group(0))
-                        cur_label = cur_label or (
-                            "Link" if lm.group("label").lower() == "url"
-                            else lm.group("label").capitalize()
-                        )
+                um = _URL_RE.search(lm.group("rest"))
+                if um:
+                    add_link(lm.group("label"), um.group(0))
                 continue
             tm = _PROJECT_TIMELINE_BULLET_RE.match(bl)
             if tm:
@@ -620,28 +751,28 @@ def _normalize_and_restore_projects(
             bm = _BARE_URL_BULLET_RE.match(bl)
             if bm:
                 had_legacy_bullet = True
-                if cur_url is None:
-                    cur_url = _strip_url_extras(bm.group(1))
+                add_link("Link", bm.group(1))
                 continue
             kept_body.append(bl)
 
-        # Fill from master if still missing.
+        # Fill from master if a URL/timeline is still missing.
         injected = False
-        if cur_url is None and master.get("url"):
-            cur_url = master["url"]
-            cur_label = cur_label or master.get("link_label") or "Link"
+        for m_link in master.get("links") or []:
+            url = m_link.get("url") or ""
+            if not url or _link_key(url) in seen_urls:
+                continue
+            add_link(m_link.get("label") or "Link", url)
             injected = True
         if cur_timeline is None and master.get("timeline"):
             cur_timeline = master["timeline"]
             injected = True
 
-        new_header = _build_inline_project_header(
-            cur_title, cur_url, cur_label or "Link", cur_timeline,
-        )
+        new_header = _build_inline_project_header(cur_title, cur_links, cur_timeline)
         out.append(new_header)
         out.extend(kept_body)
 
-        if injected or had_legacy_bullet or parsed.get("url") is None and cur_url:
+        if injected or had_legacy_bullet or (parsed.get("links") is not None
+                                             and not parsed.get("links") and cur_links):
             touched.append(cur_title)
 
         i = j
@@ -669,8 +800,7 @@ def _normalize_and_restore_projects(
                 m = master_meta[key]
                 splice.append("")
                 splice.append(_build_inline_project_header(
-                    m["name"], m.get("url"),
-                    m.get("link_label") or "Link", m.get("timeline"),
+                    m["name"], m.get("links") or [], m.get("timeline"),
                 ))
                 splice.extend(_extract_master_project_bullets(master_resume, key))
                 touched.append(m["name"])

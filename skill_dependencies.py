@@ -271,6 +271,47 @@ def compute_implicit_skills(known_skills: set[str]) -> set[str]:
     return implicit
 
 
+# Baseline skills that are "so common they're not worth listing as Currently
+# Exploring". Every candidate applying to a software / ML role is assumed to
+# know these — putting them in the Exploring line just wastes attention on
+# things that don't differentiate the candidate.
+#
+# Values are in canonical normalized form (see _ALIASES).
+BASELINE_SKILLS: set[str] = {
+    # Version control / hosting
+    "git", "github", "gitlab", "bitbucket", "version control",
+
+    # OS / shell basics
+    "linux", "unix", "bash", "shell", "zsh", "command line", "windows", "macos",
+
+    # Data-interchange formats
+    "json", "yaml", "xml", "csv", "toml", "markdown",
+
+    # Universal protocols / patterns
+    "http", "https", "rest", "api", "apis", "url", "dns", "tcp", "tcp/ip",
+
+    # Editors / basic dev tools
+    "vs code", "vscode", "intellij", "sublime text", "notepad++",
+    "postman", "insomnia", "curl", "wget",
+
+    # Basic programming concepts (never valid as "exploring")
+    "oop", "object-oriented programming", "functional programming",
+    "algorithms", "data structures", "problem solving",
+
+    # Extremely common frontend baselines (still filtered even without
+    # implicit dependency — a candidate applying for ANY software role
+    # is assumed to have exposure to these)
+    "html", "css", "javascript",
+
+    # Extremely common Python baselines
+    "numpy",
+
+    # Agile / SDLC (a process, not a skill worth exploring)
+    "agile", "scrum", "kanban", "sdlc", "jira", "confluence",
+    "test-driven development", "tdd",
+}
+
+
 def filter_exploring_items(
     items: list[str], known_skills: set[str]
 ) -> tuple[list[str], list[str]]:
@@ -279,6 +320,8 @@ def filter_exploring_items(
     Removes items that:
       1. Match a skill the candidate already has (direct duplicate).
       2. Match a skill implied by something they already have (prerequisite).
+      3. Are baseline skills every candidate is assumed to know (BASELINE_SKILLS)
+         — listing these as "exploring" makes the candidate look junior.
 
     Returns (kept, removed) preserving the ORIGINAL casing of each item.
     """
@@ -291,7 +334,7 @@ def filter_exploring_items(
         norm = normalize(item)
         if not norm:
             continue
-        if norm in known_norm or norm in implicit:
+        if norm in known_norm or norm in implicit or norm in BASELINE_SKILLS:
             removed.append(item)
         else:
             kept.append(item)

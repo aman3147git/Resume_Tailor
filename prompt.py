@@ -44,13 +44,17 @@ Your task is to tailor a candidate's resume for a specific job description.
     matching the JD, and current focus areas.
 15. Technical Skills: 6-9 grouped lines (plus the mandatory Currently Exploring line).
     Group by category (Languages, Frameworks, Databases, Cloud/DevOps, etc.).
-16. Experience: 3-5 bullets per role, ≤ 25 words per bullet. Lead with the
-    most JD-relevant achievement.
+16. Experience: 3-5 bullets per role. Each bullet MUST be 15-28 words
+    (roughly 2 lines when rendered). No one-line stubs like "Built API in
+    FastAPI." — expand with the scale, tool, and measurable impact. Lead
+    with the most JD-relevant achievement. Every bullet MUST end with a
+    period. Sentences must be complete — never leave a bullet trailing off.
 17. Projects: include EVERY project from the master resume if the master has
     3 or fewer total projects. NEVER drop a project just because it seems
     less JD-relevant — the candidate has few projects, every one counts.
     Only if the master has 4+ projects may you pick the top 3 by relevance.
-    Each project: 3-4 achievement bullets, ≤ 25 words per bullet.
+    Each project: 3-4 achievement bullets. Each bullet MUST be 15-28 words
+    and end with a period, same as Experience bullets (rule 16).
 18. Education: one line per degree plus optional one-line coursework / GPA note.
 19. Achievements / Awards / etc.: keep 4-6 of the most JD-relevant items as bullets.
 20. If after writing everything you sense the page would be less than full,
@@ -64,17 +68,28 @@ Your task is to tailor a candidate's resume for a specific job description.
 23. The final bullet of the Technical Skills section MUST be exactly:
     `- **Currently Exploring:** <comma-separated list>`
     DO NOT dump every Missing Skill / Potential Gap here. Pick the
-    **3-4 most JD-critical** items only, with these constraints:
+    **2-4 RARE, DIFFERENTIATING** items only, with these constraints:
       - Hard maximum: 4 items. A long list signals desperation/padding.
       - Each item must be a real, named technology or concept — never a tool
         category, a dev-environment ("Cursor", "VS Code", "Claude Code"), or
         a sub-skill of something already listed.
+      - MUST NOT be a baseline skill that any candidate in this role is
+        assumed to have. NEVER list: Git, GitHub, Linux, Bash, shell, JSON,
+        YAML, HTTP, REST, HTML, CSS, JavaScript, VS Code, Postman, Agile,
+        Scrum, JIRA, OOP, algorithms, data structures, unit testing,
+        Markdown, XML, or NumPy. If a "gap" is one of these, silently skip
+        it — the candidate is assumed to know it already.
+      - Prefer items that would actually make a recruiter say "oh, they're
+        pushing themselves" — e.g. Rust, gRPC, Kubernetes Operators, Ray,
+        vLLM, LangSmith, Temporal, Modal, WebAssembly, Terraform, eBPF,
+        DuckDB, Delta Lake — not baseline dev-tools.
       - Use the EXACT terminology used in the JD.
       - Order by importance to the JD (most critical first).
       - Do NOT phrase this as experience anywhere else in the resume.
     The ONLY case where you may omit this bullet is if BOTH "Missing Skills" and
     "Potential Gaps" in the Match Analysis are empty, OR if every gap turns out
-    to be an implicit prerequisite the candidate already covers (see rule 24).
+    to be an implicit prerequisite / baseline the candidate already covers
+    (see rule 24 and the baseline list above).
 
 24. CRITICAL — EXCLUDE IMPLICIT PREREQUISITES from the Currently Exploring list.
     Never list a skill that the candidate obviously already knows by virtue of
@@ -131,27 +146,32 @@ Your task is to tailor a candidate's resume for a specific job description.
     demos, GitHub repos, LinkedIn, personal site, paper DOIs. NEVER drop,
     paraphrase, or invent a URL.
 
-    PROJECT HEADER FORMAT — use this EXACT shape, all on one line:
+    PROJECT HEADER FORMAT — use this EXACT shape, all on one line. A project
+    can have a live demo URL, a GitHub repo URL, both, or neither:
 
-      ### <Project Title> | [Link](<URL from master>) | <Timeline from master>
+      ### <Project Title> | [Link](<demo URL>) | [GitHub](<repo URL>) | <Timeline>
 
-    Worked example using the real Talent-Agent project:
+    Worked example using a real project:
 
-      ### Talent-Agent | [Link](https://talentagent-aman.streamlit.app/) | Jan 2026 – Mar 2026
+      ### Talent-Agent | [Link](https://talentagent-aman.streamlit.app/) | [GitHub](https://github.com/aman3147git/talent-agent) | Jan 2026 – Mar 2026
       - **Stack:** LangGraph, MCP, Streamlit
       - <achievement bullet 1>
       - <achievement bullet 2>
       - <achievement bullet 3>
 
     Rules for the header line:
-      - NEVER write the raw URL as visible text — always wrap it as `[Link](url)`
-        so it renders as a clickable word.
-      - The link label is the literal word "Link" (or "Demo" / "Repo" if the
-        master explicitly uses one of those). Nothing else.
-      - The Stack bullet stays as the FIRST bullet under the header (not in
-        the header line). Trim Stack to JD-relevant tech if needed.
-      - Omit `| [Link](url)` ONLY if the master has no URL for that project.
-      - Omit `| <Timeline>` ONLY if the master has no timeline for it.
+      - NEVER write a raw URL as visible text — always wrap URLs as
+        `[Link](url)` or `[GitHub](url)` so they render as clickable words.
+      - Use the literal label `Link` for a demo/live URL, and the literal
+        label `GitHub` for a repository URL. Master may also use `Demo`,
+        `Repo`, `URL`, or `Live` — treat those as `Link` unless they point
+        to github.com in which case treat them as `GitHub`.
+      - Both links appear on the SAME line as the title, in the order:
+        Title → Link (demo) → GitHub (repo) → Timeline.
+      - The Stack bullet stays as the FIRST bullet under the header. Trim
+        Stack to JD-relevant tech if needed.
+      - Omit any segment (`| [Link](url)`, `| [GitHub](url)`, or
+        `| <Timeline>`) ONLY if the master has nothing for it.
       - Never invent a URL or a timeline.
 
     For the CONTACT line, preserve markdown links exactly as written, even
@@ -219,10 +239,10 @@ Potential Gaps:
 
 ## Projects
 
-### <Project Name> | [Link](<URL>) | <Timeline>
+### <Project Name> | [Link](<demo URL>) | [GitHub](<repo URL>) | <Timeline>
 - **Stack:** <comma-separated JD-relevant tech>   (ONLY if master has it)
-- bullet
-- bullet
+- bullet   (15-28 words, ends with a period)
+- bullet   (15-28 words, ends with a period)
 
 ## Education
 
